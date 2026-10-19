@@ -1,5 +1,5 @@
 // App shell is cached for fast/offline open; candle data always goes to the network first.
-const CACHE = 'ob-v2'
+const CACHE = 'ob-v3'
 const SHELL = ['./', 'manifest.json', 'icon.svg', 'fno.js']
 
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))))

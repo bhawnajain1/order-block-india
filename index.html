@@ -14,7 +14,10 @@
   #side { width: 320px; overflow: auto; border-right: 1px solid #222; padding: 8px }
   #main { flex: 1; padding: 8px; display: flex; flex-direction: column; min-width: 0 }
   #chartbox { flex: 1; min-height: 240px }
-  canvas { width: 100%; height: 100%; background: #131a22; display: block }
+  #cv { width: 100%; height: 100%; background: #131a22; display: block }
+  #xray { width: 100%; height: 90px; background: #131a22; display: block; margin: 4px 0; cursor: pointer }
+  #live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #555; margin-right: 4px }
+  #live.on { background: #26a69a }
   select, button, input { background: #1c2630; color: #ddd; border: 1px solid #333; padding: 5px 9px; border-radius: 4px; font: inherit }
   button { cursor: pointer }
   h3 { margin: 12px 0 4px; font-size: 13px }
@@ -38,6 +41,7 @@
   <select id="interval"><option value="1d|1y">Daily</option><option value="1h|3mo">1h</option><option value="15m|1mo">15m</option><option value="5m|5d">5m</option></select>
   <button id="refresh">Refresh board</button>
   <span id="status" class="mute"></span>
+  <span class="mute" style="margin-left:auto"><span id="live"></span><span id="mkt"></span></span>
 </header>
 <div id="body">
   <div id="side">
@@ -48,6 +52,7 @@
   </div>
   <div id="main">
     <div id="title"></div>
+    <canvas id="xray" height="90" title="Market X-Ray: every scanned stock at its % move. Click a dot."></canvas>
     <div id="chartbox"><canvas id="cv"></canvas></div>
     <div id="card"></div>
   </div>
@@ -172,7 +177,34 @@ function renderBoard() {
   $('bullList').innerHTML = rows('bull') || '<span class="mute">none</span>'
   $('bearList').innerHTML = rows('bear') || '<span class="mute">none</span>'
   const cnt = d => all.filter(([, v]) => v.dir === d).length
+  drawXray()
   $('summary').innerHTML = `<span class="bull">Bullish ${cnt('bull')}</span><span class="bear">Bearish ${cnt('bear')}</span><span class="mute">Choppy ${cnt('choppy')}</span>`
+}
+// Market X-Ray: each scanned stock is a dot at its % move (x), colour = bullish/bearish/choppy.
+let dots = []
+function drawXray() {
+  const cv = $('xray'), dpr = devicePixelRatio || 1
+  cv.width = cv.clientWidth * dpr; cv.height = 90 * dpr
+  const g = cv.getContext('2d'); g.scale(dpr, dpr)
+  const W = cv.clientWidth, H = 90, RANGE = 5
+  const X = pct => 10 + (Math.max(-RANGE, Math.min(RANGE, pct)) + RANGE) / (2 * RANGE) * (W - 20)
+  g.strokeStyle = '#333'; g.beginPath(); g.moveTo(X(0), 0); g.lineTo(X(0), H - 14); g.stroke()
+  g.fillStyle = '#888'; g.font = '10px system-ui'; g.textAlign = 'center'
+  for (const t of [-4, -2, 0, 2, 4]) g.fillText((t > 0 ? '+' : '') + t + '%', X(t), H - 3)
+  const rows = {}
+  dots = Object.entries(board).sort((a, b) => a[1].pct - b[1].pct).map(([s, v]) => {
+    const x = X(v.pct), k = Math.round(x / 7), y = 8 + (rows[k] = (rows[k] ?? -1) + 1) % 10 * 7
+    return { s, x, y, v }
+  })
+  dots.forEach(d => {
+    g.fillStyle = d.v.dir === 'bull' ? '#26a69a' : d.v.dir === 'bear' ? '#ef5350' : '#777'
+    g.beginPath(); g.arc(d.x, d.y, d.s === current ? 4 : 2.8, 0, 7); g.fill()
+  })
+}
+$('xray').onclick = e => {
+  const r = $('xray').getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top
+  const d = dots.map(d => ({ d, dist: Math.hypot(d.x - x, d.y - y) })).sort((a, b) => a.dist - b.dist)[0]
+  if (d && d.dist < 10) show(d.d.s)
 }
 $('refresh').onclick = () => scanBoard(true)
 $('bullList').onclick = $('bearList').onclick = e => { const r = e.target.closest('.row'); if (r) show(r.dataset.s) }
@@ -240,7 +272,30 @@ async function show(symbol) {
   } catch (e) { $('card').textContent = 'could not load ' + label(symbol) + ': ' + e.message; console.log('show error', symbol, e.message) }
 }
 $('interval').onchange = () => show(current)
-addEventListener('resize', () => show(current))
+addEventListener('resize', () => { show(current); drawXray() })
+
+// ---- auto refresh (NSE hours Mon-Fri 09:15-15:30 IST) ----
+// Open chart every 60s, whole board every 5 min. Paused when the tab is hidden or the market is closed,
+// to stay inside the free proxy quota.
+function marketOpen() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date()).map(x => [x.type, x.value]))
+  const mins = (+p.hour % 24) * 60 + +p.minute
+  return !['Sat', 'Sun'].includes(p.weekday) && mins >= 9 * 60 + 15 && mins <= 15 * 60 + 30
+}
+let ticks = 0
+function tick() {
+  const open = marketOpen()
+  $('live').className = open ? 'on' : ''
+  $('mkt').textContent = open ? 'Live - auto-refreshing' : 'Market closed - showing last session'
+  if (!open || document.hidden) return
+  ticks++
+  console.log('auto refresh tick', ticks)
+  show(current)
+  if (ticks % 5 === 0) scanBoard(true)
+}
+setInterval(tick, 60 * 1000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick() })
+tick()
 
 watchLabel()
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => console.log('sw registered'))
