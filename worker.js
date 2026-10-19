@@ -10,7 +10,7 @@ export default {
     const range = url.searchParams.get('range') || '6mo'
     const yahoo = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`
     try {
-      const r = await fetch(yahoo, { headers: { 'User-Agent': 'Mozilla/5.0' }, cf: { cacheTtl: 60 } })
+      const r = await fetch(yahoo, { headers: { 'User-Agent': 'Mozilla/5.0' }, cf: { cacheTtl: 60, cacheEverything: true } })
       const d = (await r.json()).chart.result[0]
       const q = d.indicators.quote[0]
       const candles = []

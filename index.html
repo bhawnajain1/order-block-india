@@ -6,49 +6,106 @@
 <meta name="theme-color" content="#0f1419">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { font: 14px system-ui; margin: 0; background: #0f1419; color: #ddd; display: flex; height: 100vh }
-  #side { width: 280px; overflow: auto; border-right: 1px solid #222; padding: 8px }
-  #main { flex: 1; padding: 8px }
-  canvas { width: 100%; height: calc(100% - 40px); background: #131a22 }
-  .row { padding: 4px 6px; cursor: pointer; display: flex; justify-content: space-between }
-  .row:hover { background: #1c2630 }
-  .bull { color: #26a69a } .bear { color: #ef5350 }
-  select, button { background: #1c2630; color: #ddd; border: 1px solid #333; padding: 4px 8px }
+  * { box-sizing: border-box }
+  body { font: 14px system-ui; margin: 0; background: #0f1419; color: #ddd; height: 100vh; display: flex; flex-direction: column }
+  header { display: flex; gap: 8px; align-items: center; padding: 8px; border-bottom: 1px solid #222; flex-wrap: wrap }
+  header b { font-size: 16px; margin-right: 8px }
+  #body { flex: 1; display: flex; min-height: 0 }
+  #side { width: 320px; overflow: auto; border-right: 1px solid #222; padding: 8px }
+  #main { flex: 1; padding: 8px; display: flex; flex-direction: column; min-width: 0 }
+  #chartbox { flex: 1; min-height: 240px }
+  canvas { width: 100%; height: 100%; background: #131a22; display: block }
+  select, button, input { background: #1c2630; color: #ddd; border: 1px solid #333; padding: 5px 9px; border-radius: 4px; font: inherit }
+  button { cursor: pointer }
+  h3 { margin: 12px 0 4px; font-size: 13px }
+  .row { padding: 4px 6px; cursor: pointer; display: flex; gap: 8px }
+  .row:hover, .row.sel { background: #1c2630 }
+  .row .n { width: 22px; color: #777 } .row .s { flex: 1 } .row .p { color: #888; width: 70px; text-align: right }
+  .bull { color: #26a69a } .bear { color: #ef5350 } .mute { color: #888 }
+  #summary { display: flex; gap: 12px; padding: 4px 0 }
+  #card { display: flex; gap: 8px; padding-top: 8px; flex-wrap: wrap }
+  #card div { flex: 1; min-width: 120px; background: #131a22; padding: 6px 10px; border-radius: 4px }
+  #card small { display: block; color: #888 }
+  #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 5 }
+  #modal > div { background: #0f1419; border: 1px solid #333; max-width: 560px; margin: 5vh auto; padding: 12px; height: 90vh; display: flex; flex-direction: column; border-radius: 6px }
+  #pick { flex: 1; overflow: auto; margin: 8px 0; columns: 3 }
+  #pick label { display: block; padding: 2px 0; cursor: pointer }
+  @media (max-width: 800px) { #body { flex-direction: column; overflow: auto } #side { width: 100%; border: 0; max-height: 40vh } #main { min-height: 420px } #pick { columns: 2 } }
 </style>
-<div id="side">
-  <b>Scanner</b> <button id="scan">Scan</button>
-  <div id="list"></div>
-</div>
-<div id="main">
-  <select id="symbol"></select>
+<header>
+  <b>Order Blocks India</b>
+  <button id="watch"></button>
   <select id="interval"><option value="1d|1y">Daily</option><option value="1h|3mo">1h</option><option value="15m|1mo">15m</option><option value="5m|5d">5m</option></select>
-  <span id="status"></span>
-  <canvas id="cv"></canvas>
+  <button id="refresh">Refresh board</button>
+  <span id="status" class="mute"></span>
+</header>
+<div id="body">
+  <div id="side">
+    <div id="summary"></div>
+    <h3 class="bull">Top Bullish</h3><div id="bullList"></div>
+    <h3 class="bear">Top Bearish</h3><div id="bearList"></div>
+    <p class="mute" style="font-size:12px">Board uses daily candles. Score = size of today's move relative to ATR, for stocks trending the same way (price vs 20-day average). Educational only, delayed data.</p>
+  </div>
+  <div id="main">
+    <div id="title"></div>
+    <div id="chartbox"><canvas id="cv"></canvas></div>
+    <div id="card"></div>
+  </div>
 </div>
+<div id="modal"><div>
+  <b>Choose stocks to scan</b>
+  <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+    <button id="allfno">All F&amp;O</button><button id="idxonly">Indices only</button><button id="clear">Clear</button>
+    <input id="find" placeholder="filter list..." style="flex:1;min-width:100px">
+  </div>
+  <div style="display:flex;gap:6px;margin-top:6px"><input id="add" placeholder="add any NSE symbol, e.g. ZOMATO" style="flex:1"><button id="addbtn">Add</button></div>
+  <div id="pick"></div>
+  <button id="done">Done &amp; scan</button>
+</div></div>
+<script src="fno.js"></script>
 <script>
-const SYMBOLS = ['^NSEI','^NSEBANK','RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','SBIN.NS','ITC.NS','LT.NS','BHARTIARTL.NS','AXISBANK.NS','KOTAKBANK.NS','TATAMOTORS.NS','MARUTI.NS','SUNPHARMA.NS','ADANIENT.NS','BAJFINANCE.NS']
 // Cloudflare Worker proxy for Yahoo (see README). Use '' to call the local node server.js instead.
 const API_BASE = 'https://order-block-proxy.order-block-india.workers.dev'
 const $ = id => document.getElementById(id)
-SYMBOLS.forEach(s => $('symbol').add(new Option(s, s)))
+const toYahoo = s => (s.startsWith('^') || s.includes('.')) ? s : s + '.NS'
+const label = s => s.replace('.NS', '')
 
-async function load(symbol) {
-  const [interval, range] = $('interval').value.split('|')
+// ---- watchlist (saved in the browser) ----
+const ALL = [...INDICES, ...FNO.map(toYahoo)]
+let extra = JSON.parse(localStorage.ob_extra || '[]')           // user-added symbols
+let chosen = new Set(JSON.parse(localStorage.ob_chosen || 'null') || ALL)
+const universe = () => [...new Set([...ALL, ...extra])]
+function saveList() { localStorage.ob_chosen = JSON.stringify([...chosen]); localStorage.ob_extra = JSON.stringify(extra) }
+function watchLabel() { $('watch').textContent = `Stocks: ${chosen.size === ALL.length ? 'All F&O' : 'Custom'} (${chosen.size})` }
+
+function renderPick() {
+  const q = $('find').value.toUpperCase()
+  $('pick').innerHTML = universe().filter(s => label(s).includes(q)).map(s =>
+    `<label><input type="checkbox" data-s="${s}" ${chosen.has(s) ? 'checked' : ''}> ${label(s)}</label>`).join('')
+}
+$('watch').onclick = () => { renderPick(); $('modal').style.display = 'block' }
+$('pick').onchange = e => { e.target.checked ? chosen.add(e.target.dataset.s) : chosen.delete(e.target.dataset.s) }
+$('find').oninput = renderPick
+$('allfno').onclick = () => { chosen = new Set(ALL); renderPick() }
+$('idxonly').onclick = () => { chosen = new Set(INDICES); renderPick() }
+$('clear').onclick = () => { chosen.clear(); renderPick() }
+$('addbtn').onclick = () => {
+  const s = toYahoo($('add').value.trim().toUpperCase())
+  if (s.length > 3) { if (!universe().includes(s)) extra.push(s); chosen.add(s); $('add').value = ''; renderPick() }
+}
+$('done').onclick = () => { $('modal').style.display = 'none'; saveList(); watchLabel(); console.log('watchlist', chosen.size); scanBoard(true) }
+
+// ---- data + order block logic ----
+async function load(symbol, interval, range) {
   const r = await fetch(`${API_BASE}/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`)
   const j = await r.json()
-  if (j.error) throw new Error(j.error)
+  if (j.error || !Array.isArray(j)) throw new Error(j.error || 'bad response')
   return j
 }
 
 function atr(c, n = 14) {
-  let sum = 0, out = []
-  for (let i = 0; i < c.length; i++) {
-    const tr = i === 0 ? c[i].h - c[i].l : Math.max(c[i].h - c[i].l, Math.abs(c[i].h - c[i-1].c), Math.abs(c[i].l - c[i-1].c))
-    sum += tr
-    if (i >= n) sum -= out[i-n].tr
-    out.push({ tr, v: sum / Math.min(i + 1, n) })
-  }
-  return out.map(x => x.v)
+  const trs = c.map((k, i) => i === 0 ? k.h - k.l : Math.max(k.h - k.l, Math.abs(k.h - c[i-1].c), Math.abs(k.l - c[i-1].c)))
+  return trs.map((_, i) => { const w = trs.slice(Math.max(0, i - n + 1), i + 1); return w.reduce((a, b) => a + b, 0) / w.length })
 }
 
 // Order block = last opposite candle before an impulse (3 candles move > 1.5 ATR past it).
@@ -72,6 +129,55 @@ function findBlocks(c) {
   return blocks
 }
 
+// ---- board: scan chosen symbols on daily candles, 6 at a time ----
+let board = {}   // symbol -> {pct, score, dir, price}
+function classify(c) {
+  if (c.length < 22) return null
+  const last = c[c.length - 1], prev = c[c.length - 2], a = atr(c).pop()
+  const sma = c.slice(-20).reduce((s, k) => s + k.c, 0) / 20
+  const pct = (last.c / prev.c - 1) * 100
+  let dir = 'choppy'
+  if (pct > 0 && last.c > sma) dir = 'bull'
+  if (pct < 0 && last.c < sma) dir = 'bear'
+  return { pct, dir, price: last.c, score: dir === 'choppy' ? 0 : Math.abs(last.c - prev.c) / a }
+}
+
+async function scanBoard(force) {
+  const list = [...chosen]
+  const cached = JSON.parse(localStorage.ob_board || '{}')
+  const fresh = !force && Date.now() - (cached.t || 0) < 5 * 60 * 1000 && cached.n === list.length
+  if (fresh) { board = cached.board; renderBoard(); $('status').textContent = 'board from cache (5 min)'; return }
+  board = {}
+  let done = 0, queue = [...list]
+  async function worker() {
+    while (queue.length) {
+      const s = queue.shift()
+      try { const r = classify(await load(s, '1d', '3mo')); if (r) board[s] = r } catch (e) { console.log('skip', s, e.message) }
+      done++
+      if (done % 10 === 0 || done === list.length) { $('status').textContent = `scanning ${done}/${list.length}`; renderBoard() }
+    }
+  }
+  await Promise.all([1, 2, 3, 4, 5, 6].map(worker))
+  localStorage.ob_board = JSON.stringify({ t: Date.now(), n: list.length, board })
+  $('status').textContent = `scanned ${Object.keys(board).length}/${list.length} at ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST`
+  console.log('scan done', Object.keys(board).length, 'of', list.length)
+  renderBoard()
+}
+
+function renderBoard() {
+  const all = Object.entries(board)
+  const top = d => all.filter(([, v]) => v.dir === d).sort((a, b) => b[1].score - a[1].score).slice(0, 20)
+  const rows = d => top(d).map(([s, v], i) =>
+    `<div class="row" data-s="${s}"><span class="n">${i + 1}</span><span class="s">${label(s)}</span><span class="${d}">${v.pct > 0 ? '+' : ''}${v.pct.toFixed(2)}%</span><span class="p">${v.price.toFixed(1)}</span></div>`).join('')
+  $('bullList').innerHTML = rows('bull') || '<span class="mute">none</span>'
+  $('bearList').innerHTML = rows('bear') || '<span class="mute">none</span>'
+  const cnt = d => all.filter(([, v]) => v.dir === d).length
+  $('summary').innerHTML = `<span class="bull">Bullish ${cnt('bull')}</span><span class="bear">Bearish ${cnt('bear')}</span><span class="mute">Choppy ${cnt('choppy')}</span>`
+}
+$('refresh').onclick = () => scanBoard(true)
+$('bullList').onclick = $('bearList').onclick = e => { const r = e.target.closest('.row'); if (r) show(r.dataset.s) }
+
+// ---- chart ----
 function draw(c, blocks) {
   const cv = $('cv'), dpr = devicePixelRatio || 1
   cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr
@@ -107,38 +213,37 @@ function draw(c, blocks) {
   for (let n = 0; n <= 5; n++) { const p = min + (max - min) * n / 5; g.fillText(p.toFixed(1), W - 58, Y(p) + 4) }
 }
 
-async function show(symbol) {
-  $('symbol').value = symbol
-  $('status').textContent = 'loading ' + symbol + '...'
-  try {
-    const c = await load(symbol), b = findBlocks(c)
-    draw(c, b)
-    const active = b.filter(x => !x.mitigated).length
-    $('status').textContent = `${symbol}: ${c.length} candles, ${active} active blocks`
-    console.log('show', symbol, c.length, 'candles', active, 'active blocks')
-  } catch (e) { $('status').textContent = e.message; console.log('show error', e.message) }
+// Zone card: Resistance / Order Block / Support / Liquidity relative to the last close.
+function zoneCard(c, blocks) {
+  const last = c[c.length - 1].c, recent = c.slice(-30)
+  const active = blocks.filter(b => !b.mitigated)
+  const nearest = active.sort((x, y) => Math.abs((x.hi + x.lo) / 2 - last) - Math.abs((y.hi + y.lo) / 2 - last))[0]
+  const res = Math.max(...recent.map(k => k.h)), sup = Math.min(...recent.map(k => k.l))
+  // liquidity = the side where stops likely rest: below support for bullish block, above resistance for bearish
+  const liq = nearest && nearest.type === 'bear' ? res : sup
+  const f = n => n.toFixed(2)
+  const ob = nearest ? `<span class="${nearest.type}">${f(nearest.lo)} - ${f(nearest.hi)}</span> (${nearest.type === 'bull' ? 'bullish' : 'bearish'})` : '<span class="mute">none active</span>'
+  $('card').innerHTML = `<div><small>Last close</small>${f(last)}</div><div><small>Resistance (30 bars)</small>${f(res)}</div><div><small>Order block</small>${ob}</div><div><small>Support (30 bars)</small>${f(sup)}</div><div><small>Liquidity</small>${f(liq)}</div>`
 }
 
-// Scanner: list symbols whose latest close sits inside, or within 1% of, an active block.
-$('scan').onclick = async () => {
-  $('list').textContent = 'scanning...'
-  const rows = []
-  for (const s of SYMBOLS) {
-    try {
-      const c = await load(s), last = c[c.length - 1].c
-      for (const b of findBlocks(c).filter(x => !x.mitigated)) {
-        const near = last >= b.lo * 0.99 && last <= b.hi * 1.01
-        if (near) rows.push({ s, type: b.type, lo: b.lo, hi: b.hi })
-      }
-    } catch (e) { console.log('scan skip', s, e.message) }
-  }
-  console.log('scan done', rows.length, 'hits')
-  $('list').innerHTML = rows.map(r => `<div class="row" data-s="${r.s}"><span>${r.s}</span><span class="${r.type}">${r.type} ${r.lo.toFixed(0)}-${r.hi.toFixed(0)}</span></div>`).join('') || 'no symbols near an active block'
+let current = '^NSEI'
+async function show(symbol) {
+  current = symbol
+  document.querySelectorAll('.row').forEach(r => r.classList.toggle('sel', r.dataset.s === symbol))
+  const b = board[symbol]
+  $('title').innerHTML = `<b>${label(symbol)}</b> ${b ? `<span class="${b.dir === 'choppy' ? 'mute' : b.dir}">${b.dir === 'bull' ? 'Bullish' : b.dir === 'bear' ? 'Bearish' : 'Choppy'} ${b.pct > 0 ? '+' : ''}${b.pct.toFixed(2)}%</span>` : ''}`
+  try {
+    const [interval, range] = $('interval').value.split('|')
+    const c = await load(symbol, interval, range), blocks = findBlocks(c)
+    draw(c, blocks); zoneCard(c, blocks)
+    console.log('show', symbol, interval, c.length, 'candles', blocks.filter(x => !x.mitigated).length, 'active blocks')
+  } catch (e) { $('card').textContent = 'could not load ' + label(symbol) + ': ' + e.message; console.log('show error', symbol, e.message) }
 }
-$('list').onclick = e => { const r = e.target.closest('.row'); if (r) show(r.dataset.s) }
-$('symbol').onchange = () => show($('symbol').value)
-$('interval').onchange = () => show($('symbol').value)
-addEventListener('resize', () => show($('symbol').value))
+$('interval').onchange = () => show(current)
+addEventListener('resize', () => show(current))
+
+watchLabel()
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => console.log('sw registered'))
-show('^NSEI')
+show(current)
+scanBoard(false)
 </script>

@@ -37,6 +37,7 @@ http.createServer(async (req, res) => {
     '/': ['index.html', 'text/html'],
     '/manifest.json': ['manifest.json', 'application/manifest+json'],
     '/icon.svg': ['icon.svg', 'image/svg+xml'],
+    '/fno.js': ['fno.js', 'text/javascript'],
     '/sw.js': ['sw.js', 'text/javascript'],
   }
   const f = files[url.pathname]

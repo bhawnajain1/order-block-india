@@ -2,6 +2,8 @@
 
 Installable web app (PWA) that finds and draws **order blocks** on Indian market charts (NIFTY, BANKNIFTY and large-cap NSE stocks), plus a scanner for symbols sitting near an active block.
 
+- Board: ranks Bullish / Bearish stocks across all F&O (list in `fno.js`), or any stocks you choose or add; choice is saved in your browser
+- Per stock: chart with order-block zones plus Resistance / Order Block / Support / Liquidity levels
 - Timeframes: Daily, 1h, 15m, 5m
 - Data: Yahoo Finance free chart endpoint (delayed, unofficial)
 - No dependencies, just Node 18+
