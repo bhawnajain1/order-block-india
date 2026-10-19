@@ -21,3 +21,11 @@ The last opposite-colour candle before a move of more than 1.5 ATR within 3 cand
 ## Disclaimer
 
 For education only, not financial advice. Data is delayed and unofficial; do not use it for live trading decisions.
+
+## Hosting on GitHub Pages
+
+Pages serves only static files, and Yahoo blocks direct browser calls (no CORS), so the data goes through a tiny proxy:
+
+1. Free Cloudflare account, then `npx wrangler deploy worker.js --name order-block-proxy --compatibility-date 2024-01-01`
+2. Put the printed `https://order-block-proxy.<you>.workers.dev` into `API_BASE` at the top of the script in `index.html`
+3. Repo Settings, Pages, deploy from `main` / root. The site is `https://<you>.github.io/order-block-india/`

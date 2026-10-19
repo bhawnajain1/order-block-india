@@ -1,8 +1,8 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Order Blocks - Indian Market</title>
-<link rel="manifest" href="/manifest.json">
-<link rel="icon" href="/icon.svg">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
 <meta name="theme-color" content="#0f1419">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -27,12 +27,14 @@
 </div>
 <script>
 const SYMBOLS = ['^NSEI','^NSEBANK','RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','SBIN.NS','ITC.NS','LT.NS','BHARTIARTL.NS','AXISBANK.NS','KOTAKBANK.NS','TATAMOTORS.NS','MARUTI.NS','SUNPHARMA.NS','ADANIENT.NS','BAJFINANCE.NS']
+// '' = same server (node server.js). For GitHub Pages set this to your Cloudflare Worker URL.
+const API_BASE = ''
 const $ = id => document.getElementById(id)
 SYMBOLS.forEach(s => $('symbol').add(new Option(s, s)))
 
 async function load(symbol) {
   const [interval, range] = $('interval').value.split('|')
-  const r = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`)
+  const r = await fetch(`${API_BASE}/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`)
   const j = await r.json()
   if (j.error) throw new Error(j.error)
   return j
@@ -137,6 +139,6 @@ $('list').onclick = e => { const r = e.target.closest('.row'); if (r) show(r.dat
 $('symbol').onchange = () => show($('symbol').value)
 $('interval').onchange = () => show($('symbol').value)
 addEventListener('resize', () => show($('symbol').value))
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(() => console.log('sw registered'))
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(() => console.log('sw registered'))
 show('^NSEI')
 </script>
