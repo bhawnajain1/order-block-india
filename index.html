@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Order Blocks - Indian Market</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg">
+<meta name="theme-color" content="#0f1419">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 14px system-ui; margin: 0; background: #0f1419; color: #ddd; display: flex; height: 100vh }
+  #side { width: 280px; overflow: auto; border-right: 1px solid #222; padding: 8px }
+  #main { flex: 1; padding: 8px }
+  canvas { width: 100%; height: calc(100% - 40px); background: #131a22 }
+  .row { padding: 4px 6px; cursor: pointer; display: flex; justify-content: space-between }
+  .row:hover { background: #1c2630 }
+  .bull { color: #26a69a } .bear { color: #ef5350 }
+  select, button { background: #1c2630; color: #ddd; border: 1px solid #333; padding: 4px 8px }
+</style>
+<div id="side">
+  <b>Scanner</b> <button id="scan">Scan</button>
+  <div id="list"></div>
+</div>
+<div id="main">
+  <select id="symbol"></select>
+  <select id="interval"><option value="1d|1y">Daily</option><option value="1h|3mo">1h</option><option value="15m|1mo">15m</option><option value="5m|5d">5m</option></select>
+  <span id="status"></span>
+  <canvas id="cv"></canvas>
+</div>
+<script>
+const SYMBOLS = ['^NSEI','^NSEBANK','RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','SBIN.NS','ITC.NS','LT.NS','BHARTIARTL.NS','AXISBANK.NS','KOTAKBANK.NS','TATAMOTORS.NS','MARUTI.NS','SUNPHARMA.NS','ADANIENT.NS','BAJFINANCE.NS']
+const $ = id => document.getElementById(id)
+SYMBOLS.forEach(s => $('symbol').add(new Option(s, s)))
+
+async function load(symbol) {
+  const [interval, range] = $('interval').value.split('|')
+  const r = await fetch(`/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`)
+  const j = await r.json()
+  if (j.error) throw new Error(j.error)
+  return j
+}
+
+function atr(c, n = 14) {
+  let sum = 0, out = []
+  for (let i = 0; i < c.length; i++) {
+    const tr = i === 0 ? c[i].h - c[i].l : Math.max(c[i].h - c[i].l, Math.abs(c[i].h - c[i-1].c), Math.abs(c[i].l - c[i-1].c))
+    sum += tr
+    if (i >= n) sum -= out[i-n].tr
+    out.push({ tr, v: sum / Math.min(i + 1, n) })
+  }
+  return out.map(x => x.v)
+}
+
+// Order block = last opposite candle before an impulse (3 candles move > 1.5 ATR past it).
+// Zone stays "active" until price closes through it (mitigated).
+function findBlocks(c) {
+  const a = atr(c), blocks = []
+  for (let i = 1; i < c.length - 3; i++) {
+    const k = c[i]
+    const up = Math.max(c[i+1].h, c[i+2].h, c[i+3].h)
+    const dn = Math.min(c[i+1].l, c[i+2].l, c[i+3].l)
+    let type = null
+    if (k.c < k.o && up - k.h > 1.5 * a[i] && c[i+1].c > k.h) type = 'bull'
+    if (k.c > k.o && k.l - dn > 1.5 * a[i] && c[i+1].c < k.l) type = 'bear'
+    if (!type) continue
+    let end = c.length - 1, mitigated = false
+    for (let j = i + 4; j < c.length; j++) {
+      if ((type === 'bull' && c[j].c < k.l) || (type === 'bear' && c[j].c > k.h)) { end = j; mitigated = true; break }
+    }
+    blocks.push({ type, i, end, hi: k.h, lo: k.l, mitigated })
+  }
+  return blocks
+}
+
+function draw(c, blocks) {
+  const cv = $('cv'), dpr = devicePixelRatio || 1
+  cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr
+  const g = cv.getContext('2d'); g.scale(dpr, dpr)
+  const W = cv.clientWidth, H = cv.clientHeight, show = c.slice(-120), off = c.length - show.length
+  const max = Math.max(...show.map(x => x.h)), min = Math.min(...show.map(x => x.l))
+  const X = i => 10 + (i - off + 0.5) * (W - 70) / show.length
+  const Y = p => 10 + (max - p) / (max - min) * (H - 40)
+  const bw = Math.max(1, (W - 70) / show.length * 0.7)
+  blocks.filter(b => !b.mitigated || b.end > off).forEach(b => {
+    g.fillStyle = b.type === 'bull' ? 'rgba(38,166,154,.25)' : 'rgba(239,83,80,.25)'
+    const x0 = Math.max(X(b.i), 10), x1 = X(b.end)
+    g.fillRect(x0, Y(b.hi), x1 - x0, Y(b.lo) - Y(b.hi))
+  })
+  show.forEach((k, n) => {
+    const x = X(n + off)
+    g.strokeStyle = g.fillStyle = k.c >= k.o ? '#26a69a' : '#ef5350'
+    g.beginPath(); g.moveTo(x, Y(k.h)); g.lineTo(x, Y(k.l)); g.stroke()
+    g.fillRect(x - bw / 2, Math.min(Y(k.o), Y(k.c)), bw, Math.max(1, Math.abs(Y(k.o) - Y(k.c))))
+  })
+  g.fillStyle = '#888'; g.font = '11px system-ui'
+  // x axis: IST date/time, ~8 labels; intraday shows time plus date
+  const intraday = $('interval').value.split('|')[0] !== '1d'
+  const fmt = intraday ? { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false } : { day: '2-digit', month: 'short', year: '2-digit' }
+  const step = Math.ceil(show.length / 8)
+  g.textAlign = 'center'
+  for (let n = 0; n < show.length; n += step) {
+    const x = X(n + off)
+    g.fillText(new Date(show[n].t).toLocaleString('en-IN', { ...fmt, timeZone: 'Asia/Kolkata' }), x, H - 8)
+    g.fillRect(x, H - 28, 1, 4)
+  }
+  g.textAlign = 'left'
+  for (let n = 0; n <= 5; n++) { const p = min + (max - min) * n / 5; g.fillText(p.toFixed(1), W - 58, Y(p) + 4) }
+}
+
+async function show(symbol) {
+  $('symbol').value = symbol
+  $('status').textContent = 'loading ' + symbol + '...'
+  try {
+    const c = await load(symbol), b = findBlocks(c)
+    draw(c, b)
+    const active = b.filter(x => !x.mitigated).length
+    $('status').textContent = `${symbol}: ${c.length} candles, ${active} active blocks`
+    console.log('show', symbol, c.length, 'candles', active, 'active blocks')
+  } catch (e) { $('status').textContent = e.message; console.log('show error', e.message) }
+}
+
+// Scanner: list symbols whose latest close sits inside, or within 1% of, an active block.
+$('scan').onclick = async () => {
+  $('list').textContent = 'scanning...'
+  const rows = []
+  for (const s of SYMBOLS) {
+    try {
+      const c = await load(s), last = c[c.length - 1].c
+      for (const b of findBlocks(c).filter(x => !x.mitigated)) {
+        const near = last >= b.lo * 0.99 && last <= b.hi * 1.01
+        if (near) rows.push({ s, type: b.type, lo: b.lo, hi: b.hi })
+      }
+    } catch (e) { console.log('scan skip', s, e.message) }
+  }
+  console.log('scan done', rows.length, 'hits')
+  $('list').innerHTML = rows.map(r => `<div class="row" data-s="${r.s}"><span>${r.s}</span><span class="${r.type}">${r.type} ${r.lo.toFixed(0)}-${r.hi.toFixed(0)}</span></div>`).join('') || 'no symbols near an active block'
+}
+$('list').onclick = e => { const r = e.target.closest('.row'); if (r) show(r.dataset.s) }
+$('symbol').onchange = () => show($('symbol').value)
+$('interval').onchange = () => show($('symbol').value)
+addEventListener('resize', () => show($('symbol').value))
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(() => console.log('sw registered'))
+show('^NSEI')
+</script>
