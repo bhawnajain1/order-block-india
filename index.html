@@ -27,8 +27,8 @@
 </div>
 <script>
 const SYMBOLS = ['^NSEI','^NSEBANK','RELIANCE.NS','TCS.NS','HDFCBANK.NS','INFY.NS','ICICIBANK.NS','SBIN.NS','ITC.NS','LT.NS','BHARTIARTL.NS','AXISBANK.NS','KOTAKBANK.NS','TATAMOTORS.NS','MARUTI.NS','SUNPHARMA.NS','ADANIENT.NS','BAJFINANCE.NS']
-// '' = same server (node server.js). For GitHub Pages set this to your Cloudflare Worker URL.
-const API_BASE = ''
+// Cloudflare Worker proxy for Yahoo (see README). Use '' to call the local node server.js instead.
+const API_BASE = 'https://order-block-proxy.order-block-india.workers.dev'
 const $ = id => document.getElementById(id)
 SYMBOLS.forEach(s => $('symbol').add(new Option(s, s)))
 
